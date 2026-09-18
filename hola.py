@@ -1,7 +1,8 @@
 from flask import Flask, request, render_template_string, send_file
 from PIL import Image, ImageDraw, ImageFont
 import io
-import base64
+import os
+import uuid
 
 app = Flask(__name__)
 
@@ -104,6 +105,10 @@ HTML = """
             border-radius: 8px;
         }
 
+        .descargar:hover {
+            background: #555;
+        }
+
         @media (max-width: 800px) {
 
             .contenido {
@@ -167,14 +172,14 @@ HTML = """
 
                 <img
                     class="imagen"
-                    src="data:image/png;base64,{{ imagen }}"
+                    src="{{ imagen }}"
                 >
 
                 <br>
 
                 <a
                     class="descargar"
-                    href="/descargar?imagen={{ imagen }}"
+                    href="/descargar/{{ archivo }}"
                 >
                     Descargar imagen
                 </a>
@@ -201,7 +206,7 @@ HTML = """
 
 def crear_imagen(nombre, monto):
 
-    # Imagen original
+    # Abrir imagen original
     img = Image.open("imagen.jpg").convert("RGB")
 
     draw = ImageDraw.Draw(img)
@@ -218,7 +223,7 @@ def crear_imagen(nombre, monto):
     x2 = x + width + mover_x
     y2 = y + height + mover_y
 
-    # Rectángulo
+    # Rectángulo blanco
     draw.rectangle(
         [x1, y1, x2, y2],
         fill="white"
@@ -254,7 +259,7 @@ def crear_imagen(nombre, monto):
         font=font_nombre
     )
 
-    # S/
+    # Fuente S/
     font_s = ImageFont.truetype(
         "asimovwid.otf",
         90
@@ -267,69 +272,106 @@ def crear_imagen(nombre, monto):
         font=font_s
     )
 
+    # Crear carpeta de imágenes temporales
+    os.makedirs("imagenes_generadas", exist_ok=True)
 
-    # Convertir imagen a memoria
-    memoria = io.BytesIO()
+    # Crear nombre único
+    nombre_archivo = f"{uuid.uuid4().hex}.png"
 
+    ruta = os.path.join(
+        "imagenes_generadas",
+        nombre_archivo
+    )
+
+    # Guardar imagen
     img.save(
-        memoria,
+        ruta,
         format="PNG"
     )
 
-    memoria.seek(0)
-
-    return base64.b64encode(
-        memoria.getvalue()
-    ).decode("utf-8")
+    return nombre_archivo
 
 
 @app.route("/", methods=["GET", "POST"])
 def inicio():
 
     imagen = None
+    archivo = None
 
     if request.method == "POST":
 
-        nombre = request.form.get("nombre", "")
-        monto = request.form.get("monto", "")
+        nombre = request.form.get(
+            "nombre",
+            ""
+        )
 
-        imagen = crear_imagen(
+        monto = request.form.get(
+            "monto",
+            ""
+        )
+
+        archivo = crear_imagen(
             nombre,
             monto
         )
 
+        # URL para mostrar la imagen
+        imagen = f"/imagen/{archivo}"
+
     return render_template_string(
         HTML,
-        imagen=imagen
+        imagen=imagen,
+        archivo=archivo
     )
 
 
-@app.route("/descargar")
-def descargar():
+# Mostrar imagen
+@app.route("/imagen/<nombre>")
+def mostrar_imagen(nombre):
 
-    datos = request.args.get("imagen")
+    ruta = os.path.join(
+        "imagenes_generadas",
+        nombre
+    )
 
-    if not datos:
-        return "No hay imagen"
-
-    imagen = base64.b64decode(datos)
-
-    archivo = io.BytesIO(imagen)
-
-    archivo.seek(0)
+    if not os.path.exists(ruta):
+        return "Imagen no encontrada", 404
 
     return send_file(
-        archivo,
+        ruta,
+        mimetype="image/png"
+    )
+
+
+# Descargar imagen
+@app.route("/descargar/<nombre>")
+def descargar(nombre):
+
+    ruta = os.path.join(
+        "imagenes_generadas",
+        nombre
+    )
+
+    if not os.path.exists(ruta):
+        return "Imagen no encontrada", 404
+
+    return send_file(
+        ruta,
         mimetype="image/png",
         as_attachment=True,
         download_name="imagen_demo.png"
     )
 
 
-import os
-
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+
+    port = int(
+        os.environ.get(
+            "PORT",
+            5000
+        )
+    )
+
     app.run(
         host="0.0.0.0",
         port=port,
